@@ -184,22 +184,118 @@ On open, compare the current packages and permissions with a local snapshot from
 - Imported backups and presets are validated and previewed; they can never bypass the protected-package list.
 - Reboot reverts firewall rules; a reboot is the universal escape hatch.
 
-## 6. Architecture
+## 6. Architecture and UI
 
+### Stack
+
+- Kotlin, Jetpack Compose (Material 3), single Activity, one ViewModel per screen exposing a `StateFlow` of immutable UI state (unidirectional data flow). No DI framework. Coroutines handle async work (they come with the androidx libraries anyway).
+- Dependencies: Compose BOM and Material 3, lifecycle-viewmodel-compose, optionally navigation-compose, and the Shizuku API and provider. Nothing else. No network or image libraries, and no `material-icons-extended` (use a handful of vector drawables).
 - Single Gradle module, package `io.github.karlmuzen.phonemanager`, minSdk 30, targetSdk 34.
-- Kotlin + Compose Material 3, single Activity, ViewModel per screen, no DI framework, no network or image libraries.
-- `ShizukuShell`: wraps Shizuku permission and process execution. Only a sealed `Command` type can be run, so there is no arbitrary shell input. Each `Command` validates its arguments (for example package-name format) and can describe itself as the exact shell string for the preview.
-- Each module is a small class that builds `Command`s and parses their output.
-- Settings and logs in SharedPreferences; no database. Desired state is written on every change, with the reboot marker in device-protected storage. Backups and presets are JSON via the system file picker; optional backup encryption uses the platform's `javax.crypto`. Bundled package descriptions live in an asset file.
+- Flutter and React Native are not used: a larger runtime and more dependencies for an app that is mostly native privileged calls. XML views would give a smaller APK but are slower to build.
+
+### Layers
+
+1. **UI:** Compose screens and ViewModels.
+2. **Modules:** Apps, Firewall, DNS, Permissions and the rest. Each is a small class that builds `Command`s and parses their output.
+3. **Core:** the sealed `Command` type and `ShizukuShell`.
+4. **State:** SharedPreferences, no database. Desired state is written on every change, with the reboot marker in device-protected storage. The change log, presets and backups are JSON (backups via the system file picker); optional backup encryption uses the platform's `javax.crypto`. Bundled package descriptions live in an asset file.
+
+### Shizuku integration
+
+- `ShizukuShell` is a Shizuku **UserService** (AIDL) that runs inside a shell-privileged process. It does not use `Shizuku.newProcess`, which Shizuku's own docs say is being removed.
+- Only a sealed `Command` type can be run, so there is no arbitrary shell input. Each `Command` validates its arguments (for example package-name format) and can describe itself as the exact shell string for the preview.
+- Commands run in batches (one round trip for many commands, such as freezing a whole tag) and return exit code, stdout and stderr per command.
+- State-changing batches are serialised with a mutex so a restore and a manual action never interleave; reads can run in parallel.
+- A binder-death listener switches the UI to "Shizuku stopped" and offers the start checklist.
+
+### UI plan
+
+- **Navigation:** bottom bar with Home, Apps, Firewall, Profiles and More (Permissions, Cleaner, Tweaks, Users, Backup, Audits).
+- **Home:** Shizuku status card, the "Reboot detected: N items need re-applying [Restore]" banner, profile tiles and vitals.
+- **Apps:** search and filter chips; multi-select with a bottom action bar. Each row shows the icon, name, state, a caution badge and a "survives reboot" or "resets on reboot" tag.
+- **Command preview:** a bottom sheet shows the exact command before anything runs, and an undo snackbar follows.
+- **Firewall:** a plain toggle list with an amber "not applied since reboot" state.
+- **Look and feel:** Material You dynamic colour, dark and AMOLED options, primary actions within thumb reach. State is always shown with text or an icon, never colour alone, and every control has a TalkBack label.
+- **Icons:** loaded through PackageManager into an `LruCache`.
 
 ## 7. Roadmap
 
-Each release should let you uninstall at least one of the tools in section 2.
+Priority rules, in order:
 
-- **v0.1 (retires Hail, Canta, ShizuWall):** Shizuku connect/permission, Apps (freeze modes, tags, uninstall/restore, bundled descriptions), ad-blocking DNS, firewall, reboot detector with one-tap restore, persistence labels, change log (recording).
-- **v0.2 (retires App Ops, most of Phone Manager):** permissions + templates, dashboard, battery, tweaks, users, profiles (with script export), automation hooks, recover screen, all-in-one backup/restore, changes since last visit, privacy audits (last access, wake report), optional biometric lock.
-- **v0.3 (partly retires SD Maid SE):** cleaner (cache, leftover data, large files, duplicates), optimisation (dexopt), risk audit, firewall suggestions.
-- **Later:** component blocker (disable individual services and receivers; risky, needs the protected list and per-component confirmation), storage analyzer, optional lossy media compression (originals kept), device profiles for non-Realme phones, localisation, F-Droid / IzzyOnDroid listing.
+1. Build what everything else depends on first.
+2. Verify risky commands before building features on them.
+3. Every release should let you uninstall at least one of the tools in section 2.
+4. Destructive or hard-to-reverse features come after the safety net (change log, command preview, recover screen).
+
+Each sub-phase is a small, shippable step: code, a manual test checklist on the device, and a tagged build. Results of command checks are recorded in `docs/command-notes.md`. A phase starts when the previous phase's "done when" items are met; the decisions in 0.3 can run in parallel with 0.1 and 0.2.
+
+### Phase 0: Groundwork (no features)
+
+| # | Work | Done when |
+| - | ---- | --------- |
+| 0.1 | Verify the unconfirmed commands (list in section 9) on the device with aShell You or `rish` | Each command is marked works / works differently / not available; features that rely on a failed command are re-planned |
+| 0.2 | Project skeleton: Gradle module, Compose M3 theme, Shizuku provider, GitHub Actions build with R8 and signing | CI produces a signed APK that installs over the previous one |
+| 0.3 | Decide the open questions: boot notification, biometric lock, source and license of the bundled debloat list | Each decision is written into this README |
+
+### Phase 1: Core platform
+
+| # | Work | Done when |
+| - | ---- | --------- |
+| 1.1 | Shizuku connection: ping, permission request, status card, "start Shizuku" checklist, binder-death handling | The app correctly shows running, stopped and no-permission states |
+| 1.2 | `ShizukuShell` as a UserService with batch execution, plus the sealed `Command` type (validation, `describe()`) | `pm list packages` runs through the shell and returns parsed output |
+| 1.3 | State store (write-through, device-protected reboot marker), change log, persistence labels | A change survives an app restart and appears in the log |
+| 1.4 | App shell UI: theme, bottom navigation, command preview sheet, undo snackbar, protected-package guard | Every command shows a preview first; protected packages are refused |
+
+### Phase 2: v0.1 Apps, firewall, DNS (retires Hail, Canta, ShizuWall)
+
+| # | Work | Done when |
+| - | ---- | --------- |
+| 2.1 | Apps list, read-only: icons via `LruCache`, search, filters, user selector | A list of 500+ apps scrolls smoothly |
+| 2.2 | Freeze and unfreeze (disable first; hide and suspend once verified), uninstall for user, restore | A freeze/unfreeze and uninstall/restore round trip works and can be undone from the log |
+| 2.3 | Tags and multi-select bulk actions | Freezing a whole tag is one preview and one batch |
+| 2.4 | Debloat info: bundled descriptions and safety badges | Works offline; attribution included |
+| 2.5 | Firewall: chain-3 toggle and per-app list | A blocked app loses network; unblocking restores it |
+| 2.6 | Reboot detector and one-tap restore | After a reboot the banner lists the lost rules and restores them |
+| 2.7 | Private DNS presets with auto-revert (shell `ping` check) | A bad host reverts automatically |
+| 2.8 | v0.1 release checklist: on-device test run, README update, tag | Hail, Canta and ShizuWall can be uninstalled |
+
+### Phase 3: v0.2 Control and safety net (retires App Ops, most of Phone Manager)
+
+| # | Work | Done when |
+| - | ---- | --------- |
+| 3.1 | Recover screen (undo from the change log) | Any logged change can be undone |
+| 3.2 | All-in-one backup and restore: selection, optional encryption, import preview | Export, clear app state, import brings it back |
+| 3.3 | Permissions and appops viewer/editor, templates, drift check | Templates apply; drift is shown after a reboot |
+| 3.4 | Profiles, plus shell-script export | A profile applies in one tap and exports as a runnable script |
+| 3.5 | Automation: shortcuts, Quick Settings tiles, token-protected intents | Tasker can apply a profile; intents are off by default |
+| 3.6 | Dashboard, battery, tweaks | Vitals display; tweaks carry persistence labels |
+| 3.7 | Users: user selector across Apps, Permissions and Firewall | The clone profile (user 999) is visible and handled |
+| 3.8 | Changes since last visit, and privacy audits (last access, wake report) | Diff and reports work with no background service |
+| 3.9 | Optional biometric lock (only if kept in 0.3) | Lock works with no always-on watcher |
+| 3.10 | v0.2 release checklist | App Ops and the Phone Manager basics can be uninstalled |
+
+### Phase 4: v0.3 Cleaner and optimisation (partly retires SD Maid SE)
+
+| # | Work | Done when |
+| - | ---- | --------- |
+| 4.1 | Optimisation: per-app dexopt with before/after sizes | Size readout is shown and reset to default works |
+| 4.2 | Cache trim and per-app data clear | Space freed is reported; data clear needs confirmation |
+| 4.3 | Large files and duplicates (size, then partial hash, then full hash; local trash) | Duplicates are found and recoverable from the trash |
+| 4.4 | Leftover-data finder with risk tags | Folders of uninstalled apps are listed; apps removed with `-k` are excluded |
+| 4.5 | Risk audit and firewall suggestions | Each flag shows its reason |
+| 4.6 | v0.3 release checklist | The parts of SD Maid SE you actually use are covered |
+
+### Phase 5: Hardening and distribution
+
+| # | Work | Done when |
+| - | ---- | --------- |
+| 5.1 | Performance and accessibility pass (TalkBack, large lists, clone profile edge cases) | No jank on large lists; every control is labelled |
+| 5.2 | Localisation | Strings externalised; at least one extra language |
+| 5.3 | Distribution: GitHub releases with ObtainX, then F-Droid / IzzyOnDroid | A listed build installs and updates cleanly |
+
+### Later (unscheduled)
+
+Component blocker (disable individual services and receivers; risky, needs the protected list and per-component confirmation), storage analyzer, optional lossy media compression (originals kept), device profiles for non-Realme phones.
 
 ## 8. Build and release
 
@@ -227,6 +323,7 @@ Each release should let you uninstall at least one of the tools in section 2.
 - [ShizuWall](https://github.com/AhmetCanArslan/ShizuWall): no-VPN firewall via chain 3, tiles and intents.
 - App Ops (Rikka): per-app appops and templates.
 - [SD Maid SE](https://github.com/d4rken-org/sdmaid-se): corpse finder, deduplicator, storage analysis.
+- [Shizuku-API](https://github.com/RikkaApps/Shizuku-API): UserService, the supported way to run privileged code.
 
 ## 11. License
 
