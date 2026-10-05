@@ -14,6 +14,7 @@ Lightweight, privacy-first replacement for Realme/Oplus Phone Manager, built on 
 - **Everything reversible.** Destructive actions need confirmation, show the exact command first, and are logged locally so they can be undone.
 - **Local storage only** (SharedPreferences, plus JSON export/import through the system file picker). No cloud, no accounts.
 - **Offline data only.** Anything the app "knows" (package descriptions, DNS presets) is bundled in the APK.
+- **Honest persistence.** Every action is labelled "survives reboot" or "resets on reboot". The app saves its desired state on every change so it can restore what a reboot wipes.
 - Own app lock via BiometricPrompt is **optional** (no always-on watcher); see roadmap.
 
 ## 2. Tools this replaces
@@ -57,7 +58,7 @@ SD Maid SE is deep and well tested. Keep it until the Cleaner covers what you ac
 | Theft protection | Drop | Needs network + account. Google Find Hub already covers it |
 | Emergency SOS | Drop | Keep OS feature |
 
-Added (not in Phone Manager): **freeze modes and tags**, **debloat descriptions**, **ad-blocking DNS**, **firewall**, **profiles**, **automation hooks**, **tweaks**, **backup/restore**.
+Added (not in Phone Manager): **freeze modes and tags**, **debloat descriptions**, **ad-blocking DNS**, **firewall**, **profiles**, **automation hooks**, **tweaks**, **reboot detector with one-tap restore**, **all-in-one backup/restore**, **changes since last visit**, **privacy audits**.
 
 ## 4. Modules
 
@@ -88,8 +89,21 @@ One-tap Private DNS via `settings put global private_dns_mode hostname` + `priva
 
 Per-app network block using Android's chain-3 mechanism, the same approach as ShizuWall: `cmd connectivity set-chain3-enabled true|false`, `cmd connectivity set-package-networking-enabled true|false <pkg>`.
 
-- Rules are cleared on reboot (Android behavior). The app stores the desired rule set and offers **one-tap "Re-apply"**, and re-applies when the app is opened and Shizuku is running.
+- Rules are cleared on reboot (Android behavior). The app stores the desired rule set and restores it with one tap (see Reboot detector and restore).
 - Works alongside a VPN (does not use the VPN slot).
+- Chain 3 blocks or allows an app entirely; it cannot separate Wi-Fi from mobile data.
+- To test: `cmd netpolicy` background-data restrictions per app may survive reboots, which would allow a persistent "block background data" option.
+- Firewall suggestions: apps that hold `INTERNET` but have not been opened in N days (usage stats read through the shell).
+
+### Reboot detector and restore
+
+Shizuku has to be restarted after every reboot, and some changes (firewall rules, some tweaks) reset with it. The app cannot save state "just before" a reboot without a running service, so it saves on every change and detects the reboot afterwards.
+
+- **Write-through state:** the desired state (firewall rules, tweaks, anything labelled "resets on reboot") is saved each time it changes, in device-protected storage, together with a boot-relative timestamp (the same idea ShizuWall uses).
+- **Detector:** on open, a changed boot time means a reboot happened. Affected items are marked "not applied" instead of showing stale "on" flags.
+- **One-tap restore:** a banner such as "Reboot detected: 8 items need re-applying" with a preview and a single button. Needs Shizuku running; otherwise it shows a short "start Shizuku" checklist.
+- **Optional boot notification (open question):** an opt-in "Start Shizuku, then tap to restore" notification would need a boot receiver. It is short-lived and not a service, but it bends the no-background principle, so it stays off until decided.
+- Items that survive reboot (disable, uninstall for user, Private DNS) are never in the restore list.
 
 ### Permissions
 
@@ -100,7 +114,7 @@ Per-app permission and appop viewer/editor.
 
 ### Profiles
 
-A profile is a saved set of actions: freeze or unfreeze tags, a firewall block list, an appop template, a DNS preset. Examples: "Work", "Sleep". Applied manually, from a shortcut/tile, or from an intent. Never scheduled.
+A profile is a saved set of actions: freeze or unfreeze tags, a firewall block list, an appop template, a DNS preset. Examples: "Work", "Sleep". Applied manually, from a shortcut/tile, or from an intent. Never scheduled. A profile can also be exported as a shell script (for `rish`, Termux or a PC), so it can run without opening the app.
 
 ### Automation
 
@@ -138,11 +152,27 @@ List profiles (e.g. the Realme clone-apps profile, user 999) and remove them wit
 
 ### Backup and restore
 
-Export and import settings, tags, presets, profiles, templates and the change log as JSON through the system file picker (no storage permission).
+One-tap, all-in-one export of the data the user has built up in the app, as a JSON file through the system file picker (no storage permission).
+
+- **The user picks what to include:** firewall rules, frozen and removed apps, tags, presets, profiles, appop templates, DNS, tweaks, change log.
+- **Optional passphrase encryption** using the platform's built-in crypto (no extra dependency), because an app list is personal data.
+- **Import is data, not commands:** check the format version and package names, map entries to typed `Command`s, keep the protected-package list enforced, and show a preview ("will freeze 12 apps, block 8") before applying.
+- **Not the same as re-apply:** the reboot restore handles what a reboot resets; export is for a new phone, a factory reset or recovery.
+- Uninstall-for-user changes are lost on a factory reset, so a restore can re-apply a debloat list from the export.
 
 ### Risk audit
 
 Local heuristics only, listed with the reason for each flag. No verdicts, no cloud lookups.
+
+### Changes since last visit
+
+On open, compare the current packages and permissions with a local snapshot from the last visit: new installs, updates that added permissions, and removed or frozen system apps that came back (for example after an OTA). No service; the diff runs only when the app is opened.
+
+### Privacy audits (read-only, on demand)
+
+- Last access time per app for sensitive ops (camera, microphone, location), read from appops. No background monitor.
+- Wake report: which apps hold wakelocks, alarms and jobs (`dumpsys power`, `alarm`, `jobscheduler`), for finding battery drain.
+- Each report states what was found and why. No verdicts.
 
 ## 5. Safety rules
 
@@ -151,6 +181,7 @@ Local heuristics only, listed with the reason for each flag. No verdicts, no clo
 - **Command preview:** every action shows the exact command before it runs.
 - Every change is written to a local change log so it can be undone from the Recover screen.
 - Automation intents are opt-in, token-protected and limited to the allow-list.
+- Imported backups and presets are validated and previewed; they can never bypass the protected-package list.
 - Reboot reverts firewall rules; a reboot is the universal escape hatch.
 
 ## 6. Architecture
@@ -159,16 +190,16 @@ Local heuristics only, listed with the reason for each flag. No verdicts, no clo
 - Kotlin + Compose Material 3, single Activity, ViewModel per screen, no DI framework, no network or image libraries.
 - `ShizukuShell`: wraps Shizuku permission and process execution. Only a sealed `Command` type can be run, so there is no arbitrary shell input. Each `Command` validates its arguments (for example package-name format) and can describe itself as the exact shell string for the preview.
 - Each module is a small class that builds `Command`s and parses their output.
-- Settings and logs in SharedPreferences; no database. Backups and presets are JSON via the system file picker. Bundled package descriptions live in an asset file.
+- Settings and logs in SharedPreferences; no database. Desired state is written on every change, with the reboot marker in device-protected storage. Backups and presets are JSON via the system file picker; optional backup encryption uses the platform's `javax.crypto`. Bundled package descriptions live in an asset file.
 
 ## 7. Roadmap
 
 Each release should let you uninstall at least one of the tools in section 2.
 
-- **v0.1 (retires Hail, Canta, ShizuWall):** Shizuku connect/permission, Apps (freeze modes, tags, uninstall/restore, bundled descriptions), ad-blocking DNS, firewall with one-tap re-apply, change log (recording).
-- **v0.2 (retires App Ops, most of Phone Manager):** permissions + templates, dashboard, battery, tweaks, users, profiles, automation hooks, recover screen, backup/restore, optional biometric lock.
-- **v0.3 (partly retires SD Maid SE):** cleaner (cache, leftover data, large files, duplicates), optimisation (dexopt), risk audit.
-- **Later:** storage analyzer, optional lossy media compression (originals kept), device profiles for non-Realme phones, localisation, F-Droid / IzzyOnDroid listing.
+- **v0.1 (retires Hail, Canta, ShizuWall):** Shizuku connect/permission, Apps (freeze modes, tags, uninstall/restore, bundled descriptions), ad-blocking DNS, firewall, reboot detector with one-tap restore, persistence labels, change log (recording).
+- **v0.2 (retires App Ops, most of Phone Manager):** permissions + templates, dashboard, battery, tweaks, users, profiles (with script export), automation hooks, recover screen, all-in-one backup/restore, changes since last visit, privacy audits (last access, wake report), optional biometric lock.
+- **v0.3 (partly retires SD Maid SE):** cleaner (cache, leftover data, large files, duplicates), optimisation (dexopt), risk audit, firewall suggestions.
+- **Later:** component blocker (disable individual services and receivers; risky, needs the protected list and per-component confirmation), storage analyzer, optional lossy media compression (originals kept), device profiles for non-Realme phones, localisation, F-Droid / IzzyOnDroid listing.
 
 ## 8. Build and release
 
@@ -178,15 +209,16 @@ Each release should let you uninstall at least one of the tools in section 2.
 
 ## 9. Known limits and open questions
 
-- Shizuku must be restarted after every reboot (wireless debugging needs Wi-Fi). Some Shizuku forks keep wireless debugging on so Shizuku can restart itself; that can be a docs tip, not a dependency.
-- Firewall rules and some tweaks reset on reboot. Re-apply happens when the app is opened and Shizuku is running; automatic re-apply with no service is not possible.
+- **Biggest limit: Shizuku must be restarted after every reboot, and starting it without root needs wireless debugging, which needs a Wi-Fi connection.** The app cannot fix this. As far as known, the network does not need internet access, so another device's hotspot may work; test on the target ROM. Some Shizuku forks keep wireless debugging on so Shizuku can restart itself; that can be a docs tip, not a dependency.
+- Firewall rules and some tweaks reset on reboot. The app cannot save state just before a reboot (no service), so it saves on every change, detects the reboot on next open and offers one-tap restore. Fully automatic re-apply is not possible without Shizuku running.
 - Chain-3 firewall commands: ShizuWall lists Android 11+; confirm on this device.
 - Android 10+ may reset or sync appops. Verify that permission templates persist on this ROM before promising it.
-- Unconfirmed on this ROM: `pm trim-caches`, `sm fstrim`, `pm hide`, `pm suspend`, `pm art cleanup`, `cmd package compile` filter names, `dumpsys netstats` output, listing `Android/data` through the shell. Each is verified in aShell You before being coded.
+- Unconfirmed on this ROM: `pm trim-caches`, `sm fstrim`, `pm hide`, `pm suspend`, `pm art cleanup`, `cmd package compile` filter names, `dumpsys netstats` output, `cmd netpolicy` background restrictions and whether they persist, appop last-access output, listing `Android/data` through the shell. Each is verified in aShell You before being coded.
 - Trinity Engine (CPU/RAM Vitalization) cannot be replicated; the app must not break it (no force-stops, keep Oplus scheduling services enabled).
 - Installed apps cannot be compressed; optimisation means dexopt control only.
 - No custom ad-block lists without a resolver the user controls (NextDNS / own AdGuard Home).
 - Cleaner is not a full SD Maid SE replacement (no system-cleaner filters, scheduler or app-definition database).
+- Disabling individual app components can cause restart loops, which is why the component blocker stays in "Later".
 
 ## 10. Prior art
 
