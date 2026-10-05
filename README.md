@@ -2,7 +2,7 @@
 
 Lightweight, privacy-first replacement for Realme/Oplus Phone Manager, built on [Shizuku](https://shizuku.rikka.app/). One app for app control, firewall, ad-blocking DNS, cleanup and tweaks.
 
-> Status: **blueprint only** (no code yet). Target device: Realme Narzo 60 5G (RMX3750), Android 14 / Realme UI 5.
+> Status: **blueprint only** (no code yet).
 
 ## 1. Principles
 
