@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
@@ -53,7 +52,7 @@ fun ShizukuPhoneManagerApp() {
                                 restoreState = true
                             }
                         },
-                        icon = { Icon(Icons.Placeholder, contentDescription = null) },
+                        icon = { Text(destination.label.take(1)) },
                         label = { Text(destination.label) },
                     )
                 }
@@ -89,6 +88,3 @@ private fun PlaceholderScreen(title: String) {
     }
 }
 
-private object Icons {
-    val Placeholder = androidx.compose.material3.Icons.Default.Settings
-}
