@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "io.github.karlmuzen.phonemanager"
+    namespace = "io.github.karlmuzen.kavora"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "io.github.karlmuzen.phonemanager"
+        applicationId = "io.github.karlmuzen.kavora"
         minSdk = 30
         targetSdk = 34
         versionCode = 1
