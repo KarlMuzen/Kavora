@@ -2,7 +2,7 @@ READ AGENTS.md, design.md and codex-prompts.md for context.
 
 
 
-# Shizuku Phone Manager
+# Kavora
 
 Lightweight, privacy-first replacement for Realme/Oplus Phone Manager, built on [Shizuku](https://shizuku.rikka.app/). One app instead of six: app control, debloat, firewall, permissions, ad-blocking DNS, cleanup and tweaks.
 
