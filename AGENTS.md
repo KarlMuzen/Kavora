@@ -15,6 +15,15 @@ Where this file or a task prompt conflicts with `docs/design.md`, **this file an
 8. **Versions:** use the latest stable AGP, Kotlin (with the Compose compiler plugin), Compose BOM, Gradle, and Shizuku API 13.x. Check Maven metadata at build time. If dependency downloads fail, stop and report; do not guess versions.
 9. License GPL-3.0. Keep file headers short.
 
+## Working agreement (anti-hallucination)
+
+- **One subphase per run.** Do only the subphase in the prompt, report, and stop. Never start the next one and never stub future features.
+- **Source of truth order:** AGENTS.md > the current prompt > docs/design.md > your own assumptions. Assumptions must be listed in the report.
+- **Unknown behavior = stop and ask.** Do not guess command syntax, command output, ROM behavior, or library APIs. If a library API is uncertain, read its source or docs in the dependency; if still unsure, report it.
+- **Fixtures:** test fixtures are labeled `synthetic` unless the user pasted real device output into `docs/fixtures/`. Never describe a synthetic fixture as device-verified.
+- **Evidence log:** `docs/command-notes.md` is updated only from Diagnostics reports the user pastes. Never fill it from memory.
+- **Phase gates:** a phase marked GATE is complete only when the user confirms it; do not assume.
+
 ## Scope overrides to docs/design.md (lean v0.1)
 
 **Keep:** typed `Command` + `Guard` + `Executor` with verify-after-write; UserService shell (`execBatch` only); capability probes (`Caps`); Apps (Disable, Enable, UninstallForUser, InstallExisting); Firewall (chain 3) with boot-id stale detection; DNS with `pendingRevert`; Home vitals via SDK APIs; Tweaks; Diagnostics (below).
