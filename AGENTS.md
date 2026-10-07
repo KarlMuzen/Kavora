@@ -1,6 +1,6 @@
 # AGENTS.md: rules for every task in this repo
 
-Project: Shizuku Phone Manager (Android, Kotlin, Jetpack Compose). Read `README.md` and `docs/design.md` before any task.
+Project: Kavora (Android, Kotlin, Jetpack Compose). Read `README.md` and `docs/design.md` before any task.
 Where this file or a task prompt conflicts with `docs/design.md`, **this file and the prompt win** (see "Scope overrides").
 
 ## Hard rules
