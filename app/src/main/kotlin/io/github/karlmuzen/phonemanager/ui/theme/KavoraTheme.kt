@@ -1,4 +1,4 @@
-package io.github.karlmuzen.phonemanager.ui.theme
+package io.github.karlmuzen.kavora.ui.theme
 
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
