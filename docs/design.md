@@ -1,4 +1,4 @@
-# Design spec: Shizuku Phone Manager
+# Design spec: Kavora
 
 Companion to `README.md`. Scope: Phase 0 to 2 (core + v0.1).
 **[verify]** = assumption to confirm in Phase 0.1 and record in `docs/command-notes.md`.
