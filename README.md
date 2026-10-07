@@ -1,4 +1,4 @@
-READ AGENTS.md, DESIGN.md and codex-prompts.md for context.
+READ AGENTS.md, design.md and codex-prompts.md for context.
 
 
 
