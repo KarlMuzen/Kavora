@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "ShizuPhoneManager"
+rootProject.name = "Kavora"
 include(":app")
