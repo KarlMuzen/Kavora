@@ -1,4 +1,4 @@
-package io.github.karlmuzen.phonemanager.ui
+package io.github.karlmuzen.kavora.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
