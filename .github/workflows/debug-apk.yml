@@ -28,8 +28,20 @@ jobs:
         with:
           gradle-version: current
 
-      - name: Build debug APK
-        run: gradle :app:assembleDebug --stacktrace
+      - name: Run JVM tests and assemble APKs
+        run: gradle :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease --stacktrace
+
+      - name: Verify release does not request INTERNET
+        shell: bash
+        run: |
+          set -euo pipefail
+          aapt="$(find "${ANDROID_HOME}/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          apk="$(find app/build/outputs/apk/release -type f -name '*.apk' | head -n 1)"
+          "$aapt" dump permissions "$apk" | tee release-permissions.txt
+          if grep -q 'android.permission.INTERNET' release-permissions.txt; then
+            echo "Release APK must not request INTERNET."
+            exit 1
+          fi
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
